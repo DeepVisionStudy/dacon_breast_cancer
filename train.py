@@ -106,7 +106,7 @@ def get_parser():
     parser.add_argument('--save_freq', type=int, default=5)
     parser.add_argument('--work_dir', type=str, default='./work_dirs')
 
-    parser.add_argument('--amp', action='store_true')
+    parser.add_argument('--amp', type=bool, default=True)
     parser.add_argument('--pred_thres', type=float, default=0.5)
     
     # Data
@@ -118,14 +118,16 @@ def get_parser():
     # Model
     parser.add_argument('--img_model', type=str, default="efficientnet_b0")
     parser.add_argument('--tab_model', type=str, default="baseline")
-    parser.add_argument('--tab_init_feat', type=int, default=24)
+    parser.add_argument('--tab_init_feat', type=int, default=23)
 
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--crit', type=str, default="bce")
     parser.add_argument('--optim', type=str, default="adamw")
     parser.add_argument('--lr', type=float, default=1e-5)
+    parser.add_argument('--lr_min', type=float, default=1e-7)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
-    parser.add_argument('--sched', type=str, default="reduce")
+    parser.add_argument('--sched', type=str, default="cosine")
+    parser.add_argument('--warmup_epoch', type=int, default=1)
     
     args = parser.parse_args()
     args.base_dir = './'
@@ -156,17 +158,21 @@ def main(args):
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     
     if args.sched == 'reduce':
+        min_lr = args.lr_min
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='max', factor=0.5, patience=1, threshold_mode='abs', min_lr=1e-8, verbose=True)
+            optimizer, mode='max', factor=0.5, patience=1, threshold_mode='abs', min_lr=min_lr, verbose=True)
     elif args.sched == 'cosine':
+        T_0 = args.warmup_epoch
+        T_mult = args.epochs
+        eta_min = args.lr_min
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=1, T_mult=1, eta_min=0, verbose=True)
+            optimizer, T_0=T_0, T_mult=T_mult, eta_min=eta_min, verbose=True)
     
     run_train(model, train_loader, valid_loader, criterion, optimizer, scheduler, args)
 
 
 if __name__ == '__main__':
-    for fold in [1,2,3,4,5]:
+    for fold in [1]:
         args = get_parser()
         args.fold = fold
         save_config(args, args.config_dir)

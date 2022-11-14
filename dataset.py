@@ -11,10 +11,11 @@ from albumentations.pytorch.transforms import ToTensorV2
 
 
 class CustomDataset(Dataset):
-    def __init__(self, medical_df, labels, transforms=None, data_dir='./data'):
+    def __init__(self, medical_df, labels, mode, transforms=None, data_dir='./data'):
         self.medical_df = medical_df
-        self.transforms = transforms
         self.labels = labels
+        self.mode = mode
+        self.transforms = transforms
         self.data_dir= data_dir
         
     def __getitem__(self, index):
@@ -23,15 +24,21 @@ class CustomDataset(Dataset):
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
+        # if self.mode == 'train':
+        #     split = self.medical_df['split'].iloc[index]
+        #     new_w = img.shape[1] // split
+        #     randn = np.random.randint(split)
+        #     img = np.array(img)[:, new_w*randn:new_w*(randn+1), :]
+
         if self.transforms is not None:
             img = self.transforms(image=img)['image']
                 
         if self.labels is not None:  # train / valid
-            tab = torch.Tensor(self.medical_df.drop(columns=['ID', 'img_path', 'mask_path', '수술연월일']).iloc[index])
+            tab = torch.Tensor(self.medical_df.drop(columns=['ID', 'img_path', 'mask_path', '수술연월일', 'split']).iloc[index])
             label = self.labels[index]
             return img, tab, label
         else:  # test
-            tab = torch.Tensor(self.medical_df.drop(columns=['ID', 'img_path', '수술연월일']).iloc[index])
+            tab = torch.Tensor(self.medical_df.drop(columns=['ID', 'img_path', '수술연월일', 'split']).iloc[index])
             return img, tab
         
     def __len__(self):
@@ -78,14 +85,16 @@ def create_data_loader(df, img_size, batch_size, num_workers, mode, data_dir, hf
         labels = df['N_category']
         df = df.drop(columns=['N_category'])
         transforms = A.Compose([
-            A.Resize(img_size, img_size),
+            A.LongestMaxSize(max_size=img_size*2),
+            A.PadIfNeeded(min_height=img_size, min_width=img_size),
+            A.RandomResizedCrop(height=img_size, width=img_size, scale=(0.5, 1.0)),
             A.HorizontalFlip(),
             A.VerticalFlip(),
             A.Rotate(limit=90, border_mode=cv2.BORDER_CONSTANT, p=0.3),
             A.Normalize(mean=mean, std=std, max_pixel_value=255.0),
             ToTensorV2()
         ])
-        dataset = CustomDataset(df, labels, transforms, data_dir)
+        dataset = CustomDataset(df, labels, mode, transforms, data_dir)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, drop_last=True)
 
     elif mode == 'valid':
@@ -96,7 +105,7 @@ def create_data_loader(df, img_size, batch_size, num_workers, mode, data_dir, hf
             A.Normalize(mean=mean, std=std, max_pixel_value=255.0),
             ToTensorV2()
         ])
-        dataset = CustomDataset(df, labels, transforms, data_dir)
+        dataset = CustomDataset(df, labels, mode, transforms, data_dir)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     
     elif mode == 'test':
@@ -113,7 +122,7 @@ def create_data_loader(df, img_size, batch_size, num_workers, mode, data_dir, hf
                 A.Normalize(mean=mean, std=std, max_pixel_value=255.0),
                 ToTensorV2()
             ])
-        dataset = CustomDataset(df, None, transforms, data_dir)
+        dataset = CustomDataset(df, None, mode, transforms, data_dir)
         # dataset.get_split_value()
         loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 
