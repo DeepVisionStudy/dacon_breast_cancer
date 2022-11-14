@@ -1,0 +1,8 @@
+__pycache__
+data/
+submit/
+wandb/
+work_dirs/
+baseline.ipynb
+check_dup_in_image.ipynb
+set_wandb.py
