@@ -26,5 +26,5 @@ def main(file_name):
 
 if __name__ == '__main__':
     set_seeds(42)
-    file_name = 'train_heuristic.csv'
+    file_name = 'train.csv'
     main(file_name)

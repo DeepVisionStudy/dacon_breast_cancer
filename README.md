@@ -28,6 +28,7 @@ Dacon : https://dacon.io/competitions/official/236011/overview/description
     │   ├── clinical_info.xlsx
     │   ├── sample_submission.csv
     │   ├── train.csv
+    │   ├── train_5fold.csv
     │   ├── train_heuristic.csv
     │   ├── train_heuristic_5fold.csv
     │   ├── test.csv

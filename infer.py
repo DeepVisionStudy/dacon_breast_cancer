@@ -32,7 +32,7 @@ def inference(model, test_loader, device):
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--df', type=str, default='test_heuristic')
+    parser.add_argument('--df', type=str, default='test')
     parser.add_argument('--mode', type=str, default='test') # test soft hard
     parser.add_argument('--hflip', action='store_true')
     parser.add_argument('--ckpt_list', nargs='+') # exp0/best.pt
@@ -48,15 +48,16 @@ def main(args, train_args, hflip=False):
     args.device = torch.device("cuda:0")
     
     df = pd.read_csv(osp.join(args.data_dir, f'{args.df}.csv'))
+    # 결측값 처리
     df = df.fillna(-1)
 
-    test_loader = create_data_loader(
-        df, train_args.img_size, train_args.batch_size, train_args.num_workers, 'test', args.data_dir, hflip)
+    test_loader = create_data_loader(df, 'test', train_args.img_size, data_dir=args.data_dir, hflip=hflip)
     
     model = ClassificationModel(train_args).to(args.device)
     model.load_state_dict(torch.load(osp.join(args.work_dir, args.ckpt)))
 
     preds = inference(model, test_loader, args.device)
+    # hard ensemble은 logit이 아니라, label 필요
     if args.mode == 'hard':
         preds = np.where(np.array(preds) > train_args.pred_thres, 1, 0)
     return preds
@@ -86,27 +87,29 @@ if __name__ == '__main__':
             preds = main(args, train_args, hflip)
             ensemble.append(preds)
 
+    # Logit을 sum으로 모았기 때문에, 곱셈으로 pred_thres를 맞춰줌
     pred_thres = train_args.pred_thres * len(args.ckpt_list)
     if args.hflip:
         pred_thres *= 2.0
 
+    # ensemble => preds
     if args.mode == 'test':
         if args.hflip:
             ensemble = np.sum(ensemble, axis=0)
         else:
             ensemble = ensemble[0]
-        ensemble = np.where(ensemble > pred_thres, 1, 0)
+        preds = np.where(ensemble > pred_thres, 1, 0)
     
     elif args.mode == 'soft':
         ensemble = np.sum(ensemble, axis=0)
-        ensemble = np.where(ensemble > pred_thres, 1, 0)
+        preds = np.where(ensemble > pred_thres, 1, 0)
 
     elif args.mode == 'hard':
         ensemble = np.array(ensemble)
-        ensemble = [np.argmax(np.bincount(ensemble[:,i])) for i in range(ensemble.shape[1])]
+        preds = [np.argmax(np.bincount(ensemble[:,i])) for i in range(ensemble.shape[1])]
     
+    # 제출 파일
     submit = pd.read_csv(osp.join(args.data_dir, 'sample_submission.csv'))
-    submit['N_category'] = ensemble
-    
+    submit['N_category'] = preds
     submit_path = osp.join(args.submit_dir, f'{submit_file_name}.csv')
     submit.to_csv(submit_path, index=False)

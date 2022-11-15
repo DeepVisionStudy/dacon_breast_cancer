@@ -24,6 +24,7 @@ class CustomDataset(Dataset):
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
+        # split 중 random하게 하나만 선택
         # if self.mode == 'train':
         #     split = self.medical_df['split'].iloc[index]
         #     new_w = img.shape[1] // split
@@ -34,11 +35,17 @@ class CustomDataset(Dataset):
             img = self.transforms(image=img)['image']
                 
         if self.labels is not None:  # train / valid
-            tab = torch.Tensor(self.medical_df.drop(columns=['ID', 'img_path', 'mask_path', '수술연월일', 'split']).iloc[index])
+            drop_col = ['ID', 'img_path', 'mask_path', '수술연월일']
+            if 'split' in self.medical_df.columns:
+                drop_col.append('split')
+            tab = torch.Tensor(self.medical_df.drop(columns=drop_col).iloc[index])
             label = self.labels[index]
             return img, tab, label
         else:  # test
-            tab = torch.Tensor(self.medical_df.drop(columns=['ID', 'img_path', '수술연월일', 'split']).iloc[index])
+            drop_col = ['ID', 'img_path', '수술연월일']
+            if 'split' in self.medical_df.columns:
+                drop_col.append('split')
+            tab = torch.Tensor(self.medical_df.drop(columns=drop_col).iloc[index])
             return img, tab
         
     def __len__(self):
@@ -77,7 +84,7 @@ class CustomDataset(Dataset):
         self.medical_df['split'] = split_column
 
 
-def create_data_loader(df, img_size, batch_size, num_workers, mode, data_dir, hflip=False):
+def create_data_loader(df, mode, img_size, batch_size=1, num_workers=0, data_dir='./data', hflip=False):
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
 
@@ -85,9 +92,7 @@ def create_data_loader(df, img_size, batch_size, num_workers, mode, data_dir, hf
         labels = df['N_category']
         df = df.drop(columns=['N_category'])
         transforms = A.Compose([
-            A.LongestMaxSize(max_size=img_size*2),
-            A.PadIfNeeded(min_height=img_size, min_width=img_size),
-            A.RandomResizedCrop(height=img_size, width=img_size, scale=(0.5, 1.0)),
+            A.Resize(img_size, img_size),
             A.HorizontalFlip(),
             A.VerticalFlip(),
             A.Rotate(limit=90, border_mode=cv2.BORDER_CONSTANT, p=0.3),
@@ -124,6 +129,6 @@ def create_data_loader(df, img_size, batch_size, num_workers, mode, data_dir, hf
             ])
         dataset = CustomDataset(df, None, mode, transforms, data_dir)
         # dataset.get_split_value()
-        loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return loader
