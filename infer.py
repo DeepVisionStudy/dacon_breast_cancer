@@ -32,8 +32,8 @@ def inference(model, test_loader, device):
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--df', type=str, default='test')
-    parser.add_argument('--mode', type=str, default='test') # test soft hard
+    parser.add_argument('--df', type=str, default='test')  # test / test_heuristic
+    parser.add_argument('--mode', type=str, default='test') # test hard
     parser.add_argument('--hflip', action='store_true')
     parser.add_argument('--vflip', action='store_true')
     parser.add_argument('--ckpt_list', nargs='+') # exp0/best.pt
@@ -102,14 +102,10 @@ if __name__ == '__main__':
 
     # 모은 ensemble을 preds (label 형태)로 만들기
     if args.mode == 'test':
-        if args.hflip:
+        if args.hflip or args.vflip:
             ensemble = np.sum(ensemble, axis=0)
         else:
             ensemble = ensemble[0]
-        preds = np.where(ensemble > pred_thres, 1, 0)
-    
-    elif args.mode == 'soft':
-        ensemble = np.sum(ensemble, axis=0)
         preds = np.where(ensemble > pred_thres, 1, 0)
 
     elif args.mode == 'hard':
