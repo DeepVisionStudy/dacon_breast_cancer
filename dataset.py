@@ -84,7 +84,7 @@ class CustomDataset(Dataset):
         self.medical_df['split'] = split_column
 
 
-def create_data_loader(df, mode, img_size, batch_size=1, num_workers=0, data_dir='./data', hflip=False):
+def create_data_loader(df, mode, img_size, batch_size=1, num_workers=0, data_dir='./data', hflip=False, vflip=False):
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
 
@@ -114,19 +114,17 @@ def create_data_loader(df, mode, img_size, batch_size=1, num_workers=0, data_dir
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     
     elif mode == 'test':
+        transforms = []
+        transforms.append(A.Resize(img_size, img_size))
         if hflip:
-            transforms = A.Compose([
-                A.Resize(img_size, img_size),
-                A.HorizontalFlip(p=1.0),
-                A.Normalize(mean=mean, std=std, max_pixel_value=255.0),
-                ToTensorV2()
-            ])
-        else:
-            transforms = A.Compose([
-                A.Resize(img_size, img_size),
-                A.Normalize(mean=mean, std=std, max_pixel_value=255.0),
-                ToTensorV2()
-            ])
+            transforms.append(A.HorizontalFlip(p=1.0))
+        if vflip:
+            transforms.append(A.VerticalFlip(p=1.0))
+        transforms.extend([
+            A.Normalize(mean=mean, std=std, max_pixel_value=255.0),
+            ToTensorV2()
+        ])
+        transforms = A.Compose(transforms)
         dataset = CustomDataset(df, None, mode, transforms, data_dir)
         # dataset.get_split_value()
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)

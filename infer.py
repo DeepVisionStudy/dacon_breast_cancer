@@ -35,6 +35,7 @@ def get_parser():
     parser.add_argument('--df', type=str, default='test')
     parser.add_argument('--mode', type=str, default='test') # test soft hard
     parser.add_argument('--hflip', action='store_true')
+    parser.add_argument('--vflip', action='store_true')
     parser.add_argument('--ckpt_list', nargs='+') # exp0/best.pt
     args = parser.parse_args()
     args.base_dir = './'
@@ -44,20 +45,21 @@ def get_parser():
     return args
 
 
-def main(args, train_args, hflip=False):
+def main(args, train_args, hflip=False, vflip=False):
     args.device = torch.device("cuda:0")
     
     df = pd.read_csv(osp.join(args.data_dir, f'{args.df}.csv'))
     # 결측값 처리
     df = df.fillna(-1)
 
-    test_loader = create_data_loader(df, 'test', train_args.img_size, data_dir=args.data_dir, hflip=hflip)
+    test_loader = create_data_loader(
+        df, 'test', train_args.img_size, data_dir=args.data_dir, hflip=hflip, vflip=vflip)
     
     model = ClassificationModel(train_args).to(args.device)
     model.load_state_dict(torch.load(osp.join(args.work_dir, args.ckpt)))
 
     preds = inference(model, test_loader, args.device)
-    # hard ensemble은 logit이 아니라, label 필요
+    # hard ensemble은 label 필요
     if args.mode == 'hard':
         preds = np.where(np.array(preds) > train_args.pred_thres, 1, 0)
     return preds
@@ -69,6 +71,8 @@ if __name__ == '__main__':
     submit_file_name = args.mode
     if args.hflip:
         submit_file_name += '_hflip'
+    if args.vflip:
+        submit_file_name += '_vflip'
 
     ensemble = []
     
@@ -77,6 +81,7 @@ if __name__ == '__main__':
         args.work_dir = osp.join('work_dirs', args.exp) # work_dirs/exp0
         
         submit_file_name += f'_{args.exp}'
+        # defalut : best.pt
         if args.ckpt.split('.')[0] != 'best':
             submit_file_name += args.ckpt.split('.')[0]
         
@@ -84,15 +89,18 @@ if __name__ == '__main__':
         train_args = load_config(osp.join(args.work_dir, 'config.yaml'))
         
         for hflip in range(args.hflip + 1):
-            preds = main(args, train_args, hflip)
-            ensemble.append(preds)
+            for vflip in range(args.vflip + 1):
+                preds = main(args, train_args, hflip, vflip)
+                ensemble.append(preds)
 
-    # Logit을 sum으로 모았기 때문에, 곱셈으로 pred_thres를 맞춰줌
+    # probability를 sum해서 모았기 때문에, sum한 만큼 pred_thres를 맞춰줌
     pred_thres = train_args.pred_thres * len(args.ckpt_list)
     if args.hflip:
         pred_thres *= 2.0
+    if args.vflip:
+        pred_thres *= 2.0
 
-    # ensemble => preds
+    # 모은 ensemble을 preds (label 형태)로 만들기
     if args.mode == 'test':
         if args.hflip:
             ensemble = np.sum(ensemble, axis=0)
