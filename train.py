@@ -113,22 +113,22 @@ def get_parser():
     parser.add_argument('--pred_thres', type=float, default=0.5)
     
     # Data
-    parser.add_argument('--df', type=str, default='train_5fold')
-    parser.add_argument('--img_size', type=int, default=256)
+    parser.add_argument('--df', type=str, default='train_5fold')  # train_5fold / train_heuristic_5fold
+    parser.add_argument('--img_size', type=int, default=512)
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--num_workers', type=int, default=8)
     
     # Model
-    parser.add_argument('--img_model', type=str, default="convnext_tiny")
+    parser.add_argument('--img_model', type=str, default="efficientnet_b0")
     parser.add_argument('--img_last_feat', type=int, default=512)
     parser.add_argument('--tab_model', type=str, default="baseline")
     parser.add_argument('--tab_init_feat', type=int, default=23)
     parser.add_argument('--tab_last_feat', type=int, default=512)
 
-    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--crit', type=str, default="bce")
     parser.add_argument('--optim', type=str, default="adamw")
-    parser.add_argument('--lr', type=float, default=1e-5)
+    parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--lr_min', type=float, default=1e-7)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--sched', type=str, default="cosine")
