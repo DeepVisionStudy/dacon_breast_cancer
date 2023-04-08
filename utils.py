@@ -3,6 +3,7 @@ import os.path as osp
 import yaml
 import torch
 import random
+import argparse
 import numpy as np
 from types import SimpleNamespace
 
@@ -43,3 +44,14 @@ def load_config(config_dir):
     with open(config_dir, 'r') as f:
         config = yaml.safe_load(f)
     return SimpleNamespace(**config)
+
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')

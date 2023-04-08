@@ -1,96 +1,172 @@
+import os.path as osp
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
+
+import edgenext_model.models.model as edgenext_models
 
 
 class ImgFeatureExtractor(nn.Module):
     def __init__(self, args):
         super(ImgFeatureExtractor, self).__init__()
         self.args = args
-        # only for torchvision models
-        self.backbone = getattr(models, self.args.img_model)(weights=self.get_weights())
-        self.change_last_layer()
         
+        if 'edgenext' in args.img_model:
+            self.backbone = getattr(edgenext_models, args.img_model)(pretrained=self.args.pretrained, classifier_dropout=0.0)
+            self.backbone.head = nn.Sequential(nn.Linear(self.backbone.head.in_features, self.args.img_last_feat))
+        else:
+            self.backbone = getattr(models, args.img_model)(weights=self.get_weights())
+            self.change_last_layer()
+
     def forward(self, x):
         x = self.backbone(x)
         return x
 
     def get_weights(self):
-        if self.args.img_model == 'resnet50':
-            weights = models.ResNet50_Weights.IMAGENET1K_V2
-        elif self.args.img_model == 'efficientnet_b0':
-            weights = models.EfficientNet_B0_Weights.IMAGENET1K_V1
-        elif self.args.img_model == 'efficientnet_v2_s':
-            weights = models.EfficientNet_V2_S_Weights.IMAGENET1K_V1
-        elif self.args.img_model == 'convnext_tiny':
-            weights = models.ConvNeXt_Tiny_Weights.IMAGENET1K_V1
-        elif self.args.img_model =='swin_t':
-            weights = models.Swin_T_Weights.IMAGENET1K_V1
+        if not self.args.pretrained:
+            weights = None
+        else:
+            if self.args.img_model == 'efficientnet_b0':
+                weights = models.EfficientNet_B0_Weights.IMAGENET1K_V1
         return weights
     
     def change_last_layer(self):
-        in_features = 0
-        for name, item in self.backbone.named_children():
-            if 'fc' in name:
-                in_features = self.backbone.fc.in_features
-                self.backbone.fc = nn.Linear(in_features, self.args.img_last_feat)
-            if 'classifier' in name:
-                in_features = self.backbone.classifier[-1].in_features
-                self.backbone.classifier[-1] = nn.Linear(in_features, self.args.img_last_feat)
-            if 'head' in name:
-                if 'swin' in self.args.img_model:
-                    in_features = self.backbone.head.in_features
-                    self.backbone.head = nn.Linear(in_features, self.args.img_last_feat)
-                elif 'vit' in self.args.img_model:
-                    in_features = self.backbone.heads.head.in_features
-                    self.backbone.heads = nn.Linear(in_features, self.args.img_last_feat)
-            
-            if in_features != 0:
-                break
+        in_features = self.backbone.classifier[-1].in_features
+        self.backbone.classifier[-1] = nn.Linear(in_features, self.args.img_last_feat)
+    
+    def requires_grad(self, phase, boolean=True):
+        if phase == 'back':
+            network = self.backbone
+        elif phase == 'head':
+            network = self.backbone.classifier
+
+        for name, layer in network.named_children():
+            for param in layer.parameters():
+                param.requires_grad = boolean
 
 
 class TabFeatureExtractor(nn.Module):
     def __init__(self, args):
         super(TabFeatureExtractor, self).__init__()
-        if args.tab_model == 'baseline':
-            self.embedding = nn.Sequential(
-                nn.Linear(in_features=args.tab_init_feat, out_features=128),
+        if args.tab_model == 'drop20':
+            self.backbone = nn.Sequential(
+                nn.Linear(args.tab_init_feat, 128),
                 nn.BatchNorm1d(128),
                 nn.LeakyReLU(),
-                nn.Linear(in_features=128, out_features=256),
+                nn.Linear(128, 256),
                 nn.BatchNorm1d(256),
                 nn.LeakyReLU(),
-                nn.Linear(in_features=256, out_features=512),
+                nn.Linear(256, 512),
+            )
+            self.embedding = nn.Sequential(
                 nn.BatchNorm1d(512),
                 nn.LeakyReLU(),
-                nn.Linear(in_features=512, out_features=args.tab_last_feat)
+                nn.Dropout(0.2),
+                nn.Linear(512, args.tab_last_feat),
+            )
+        elif args.tab_model == 'add64feat':
+            self.backbone = nn.Sequential(
+                nn.Linear(args.tab_init_feat, 64),
+                nn.BatchNorm1d(64),
+                nn.LeakyReLU(),
+                nn.Linear(64, 128),
+                nn.BatchNorm1d(128),
+                nn.LeakyReLU(),
+                nn.Linear(128, 256),
+                nn.BatchNorm1d(256),
+                nn.LeakyReLU(),
+                nn.Linear(256, 512),
+            )
+            self.embedding = nn.Sequential(
+                nn.BatchNorm1d(512),
+                nn.LeakyReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(512, args.tab_last_feat),
+            )
+        elif args.tab_model == 'drop2':
+            self.backbone = nn.Sequential(
+                nn.Linear(args.tab_init_feat, 64),
+                nn.BatchNorm1d(64),
+                nn.LeakyReLU(),
+                nn.Linear(64, 128),
+                nn.BatchNorm1d(128),
+                nn.LeakyReLU(),
+                nn.Linear(128, 256),
+                nn.BatchNorm1d(256),
+                nn.LeakyReLU(),
+                nn.Linear(256, 512),
+            )
+            self.embedding = nn.Sequential(
+                nn.BatchNorm1d(512),
+                nn.LeakyReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(512, 256),
+                nn.BatchNorm1d(256),
+                nn.LeakyReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(256, args.tab_last_feat),
             )
         
     def forward(self, x):
+        x = self.backbone(x)
         x = self.embedding(x)
         return x
+    
+    def requires_grad(self, phase, boolean=True):
+        if phase == 'back':
+            network = self.backbone
+        elif phase == 'head':
+            network = self.embedding
+
+        for name, layer in network.named_children():
+            for param in layer.parameters():
+                param.requires_grad = boolean
 
 
 class ClassificationModel(nn.Module):
     def __init__(self, args):
         super(ClassificationModel, self).__init__()
-        self.img_feature_extractor = ImgFeatureExtractor(args)
-        self.tab_feature_extractor = TabFeatureExtractor(args)
+        self.args = args
+
+        if args.cls_model == 'baseline':
+            self.img_feature_extractor = ImgFeatureExtractor(args)
+            self.tab_feature_extractor = TabFeatureExtractor(args)
+        elif args.cls_model == 'img2tab':
+            args.tab_init_feat += 1
+            self.img_feature_extractor = ImgFeatureExtractor(args)
+            self.tab_feature_extractor = TabFeatureExtractor(args)
         
-        in_features = args.img_last_feat + args.tab_last_feat
-        self.classifier = nn.Sequential(
-            nn.Linear(in_features=in_features, out_features=1),
-            nn.Sigmoid(),
-        )
+        if args.cls_fusion == 'cat':
+            in_features = args.img_last_feat + args.tab_last_feat
+            layers = [nn.Linear(in_features=in_features, out_features=1)]
+        if args.cls_last_sigmoid:
+            layers.append(nn.Sigmoid())
+        self.classifier = nn.Sequential(*layers)
         
-    def forward(self, img, tabular):
-        img_feature = self.img_feature_extractor(img)
-        tab_feature = self.tab_feature_extractor(tabular)
-        feature = torch.cat([img_feature, tab_feature], dim=-1)
-        output = self.classifier(feature)
+    def forward(self, img, tab):
+        if self.args.cls_model == 'baseline':
+            img_feature = self.img_feature_extractor(img)
+            tab_feature = self.tab_feature_extractor(tab)
+        elif self.args.cls_model == 'img2tab':
+            img_feature = self.img_feature_extractor(img)
+            img2tab_feature = torch.cat([img_feature, tab], dim=-1)
+            tab_feature = self.tab_feature_extractor(img2tab_feature)
+
+        if self.args.cls_fusion == 'cat':
+            feature = torch.cat([img_feature, tab_feature], dim=-1)
+            output = self.classifier(feature)
+        
         return output
 
-
 if __name__ == '__main__':
-    model = models.convnext_tiny()
-    print(model.named_modules)
+    model = models.efficientnet_b0()
+    for name, item in model.named_children():
+        if 'fc' in name:
+            print(name)
+        if 'classifier' in name:
+            print(name)
+        if 'head' in name:
+            print(name)
+    
+    print(model)
